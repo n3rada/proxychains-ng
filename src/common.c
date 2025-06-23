@@ -80,22 +80,26 @@ static int check_path(char *path) {
 	return access(path, R_OK) != -1;
 }
 
+
 char *get_config_path(char* default_path, char* pbuf, size_t bufsize) {
     char buf[512];
     char *path = NULL;
 
-    // top priority: user-defined path
-    if (default_path && check_path(default_path)) {
-        return default_path;
-    }
+    // 1. User-specified config
+    if (default_path && check_path(default_path)) return default_path;
 
-    // priority 1: environment override
+    // 2. PROXYCHAINS_CONF_FILE env var
     path = getenv(PROXYCHAINS_CONF_FILE_ENV_VAR);
-    if (check_path(path)) {
-        return path;
+    if (check_path(path)) return path;
+
+    // 3. ./proxychains.conf (in current working directory)
+    path = getcwd(buf, sizeof(buf));
+    if (path) {
+        snprintf(pbuf, bufsize, "%s/%s", path, PROXYCHAINS_CONF_FILE);
+        if (check_path(pbuf)) return pbuf;
     }
 
-    // priority 2: XDG_CONFIG_HOME or fallback to ~/.config
+    // 4. $XDG_CONFIG_HOME/proxychains/proxychains.conf
     const char *xdg_config_home = getenv("XDG_CONFIG_HOME");
     const char *home = getenv("HOME");
     if (xdg_config_home) {
@@ -106,20 +110,25 @@ char *get_config_path(char* default_path, char* pbuf, size_t bufsize) {
         if (check_path(pbuf)) return pbuf;
     }
 
-    // priority 3: Haiku-style config location
+    // 5. $HOME/.proxychains/proxychains.conf (legacy)
     if (home) {
+        snprintf(pbuf, bufsize, "%s/.proxychains/%s", home, PROXYCHAINS_CONF_FILE);
+        if (check_path(pbuf)) return pbuf;
+
+        // 6. Haiku fallback
         snprintf(pbuf, bufsize, "%s/config/settings/%s", home, PROXYCHAINS_CONF_FILE);
         if (check_path(pbuf)) return pbuf;
     }
 
-    // priority 4: system config via build-time sysconfdir
+    // 7. System-wide config via build
     path = SYSCONFDIR "/" PROXYCHAINS_CONF_FILE;
     if (check_path(path)) return path;
 
-    // priority 5: final fallback
+    // 8. /etc/proxychains.conf
     path = "/etc/" PROXYCHAINS_CONF_FILE;
     if (check_path(path)) return path;
 
     perror("could not find configuration file");
     exit(1);
 }
+
